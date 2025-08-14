@@ -10,7 +10,7 @@ const analysisRoutes = require('./routes/analysis');
 const resultsRoutes = require('./routes/results');
 
 // Middleware imports
-const errorHandler = require('./middleware/errorHandler');
+const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
 const server = createServer(app);
@@ -83,7 +83,7 @@ io.on('connection', (socket) => {
 });
 
 // Error handling middleware
-app.use(errorHandler);
+app.use(errorHandler.errorHandler);
 
 // 404 handler
 app.use('*', (req, res) => {
