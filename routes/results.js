@@ -1,5 +1,5 @@
 const express = require('express');
-const gcsService = require('../services/GCSService');
+const gcsService = require('../services/gcsService');
 
 const router = express.Router();
 
