@@ -1,6 +1,6 @@
 const express = require('express');
 const analysisController = require('../controllers/analysisController');
-const gcsService = require('../services/GCSService');
+const gcsService = require('../services/gcsService');
 
 const router = express.Router();
 
