@@ -1,7 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
-const gcsService = require('../services/GCSService');
+const gcsService = require('../services/gcsService');
 
 const router = express.Router();
 
