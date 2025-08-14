@@ -83,7 +83,7 @@ io.on('connection', (socket) => {
 });
 
 // Error handling middleware
-app.use(errorHandler.errorHandler);
+app.use(errorHandler);
 
 // 404 handler
 app.use('*', (req, res) => {
