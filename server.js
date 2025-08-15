@@ -18,7 +18,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { Storage } = require('@google-cloud/storage');
 
 // 🔧 CRITICAL FIX: Import GCSService
-const gcsService = require('./services/GCSService');
+const gcsService = require('./services/gcsService');
 
 const app = express();
 const server = createServer(app);
