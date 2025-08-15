@@ -11,23 +11,23 @@ class AnalysisController {
     const { videoId, videoFileName, matchMetadata } = req.body;
     const io = req.app.get('io');
     
+    // FIXED: Initialize analysisState outside try block to fix scope issue
+    let analysisState = {
+      videoId: videoId,
+      status: 'processing',
+      currentStage: 'initialization',
+      progress: 0,
+      startTime: new Date().toISOString(),
+      stages: {
+        frame_extraction: { status: 'pending', progress: 0 },
+        gpt4_analysis: { status: 'pending', progress: 0 },
+        claude_enhancement: { status: 'pending', progress: 0 },
+        final_report: { status: 'pending', progress: 0 }
+      }
+    };
+    
     try {
       console.log(`🚀 Starting analysis pipeline for video: ${videoId}`);
-      
-      // Initialize progress tracking
-      const analysisState = {
-        videoId: videoId,
-        status: 'processing',
-        currentStage: 'initialization',
-        progress: 0,
-        startTime: new Date().toISOString(),
-        stages: {
-          frame_extraction: { status: 'pending', progress: 0 },
-          gpt4_analysis: { status: 'pending', progress: 0 },
-          claude_enhancement: { status: 'pending', progress: 0 },
-          final_report: { status: 'pending', progress: 0 }
-        }
-      };
       
       // Emit initial status
       io.to(`analysis-${videoId}`).emit('analysis-progress', analysisState);
@@ -169,13 +169,13 @@ class AnalysisController {
     } catch (error) {
       console.error(`❌ Analysis pipeline failed for video ${videoId}:`, error);
       
-      // Update error status
+      // FIXED: analysisState is now accessible here
       const errorState = {
         videoId: videoId,
         status: 'failed',
         error: error.message,
         failedAt: new Date().toISOString(),
-        currentStage: analysisState?.currentStage || 'unknown'
+        currentStage: analysisState.currentStage || 'unknown'
       };
       
       io.to(`analysis-${videoId}`).emit('analysis-error', errorState);
@@ -185,7 +185,7 @@ class AnalysisController {
         videoId: videoId,
         status: 'failed',
         error: error.message,
-        stage: analysisState?.currentStage || 'unknown'
+        stage: analysisState.currentStage || 'unknown'
       });
     }
   }
