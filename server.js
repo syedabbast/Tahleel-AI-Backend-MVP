@@ -15,9 +15,8 @@ const { errorHandler } = require('./middleware/errorHandler');
 // Service imports for connection checks
 const OpenAI = require('openai');
 const Anthropic = require('@anthropic-ai/sdk');
-const { Storage } = require('@google-cloud/storage');
 
-// 🔧 CRITICAL FIX: Import GCSService
+// 🔧 ONLY USE gcsService - Remove duplicate Google Cloud Storage setup
 const gcsService = require('./services/gcsService');
 
 const app = express();
@@ -41,11 +40,6 @@ const openai = new OpenAI({
 
 const claude = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY
-});
-
-const storage = new Storage({
-  projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS
 });
 
 // Service connection status
@@ -130,37 +124,29 @@ async function checkClaudeConnection() {
 }
 
 /**
- * Check Google Cloud Storage connection
+ * Check Google Cloud Storage connection using gcsService
  */
 async function checkGoogleCloudConnection() {
   try {
     console.log('☁️ Testing Google Cloud Storage connection...');
     
-    const bucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET;
-    if (!bucketName) {
-      throw new Error('GOOGLE_CLOUD_STORAGE_BUCKET not configured');
+    // Use the working gcsService instead of duplicate implementation
+    const connected = await gcsService.testConnection();
+    
+    if (connected) {
+      serviceStatus.googleCloud = {
+        connected: true,
+        lastCheck: new Date().toISOString(),
+        error: null,
+        bucket: process.env.GOOGLE_CLOUD_STORAGE_BUCKET,
+        status: "operational"
+      };
+      
+      console.log('✅ Google Cloud Storage connection successful');
+      return true;
+    } else {
+      throw new Error('GCS connection test returned false');
     }
-    
-    const bucket = storage.bucket(bucketName);
-    const [exists] = await bucket.exists();
-    
-    if (!exists) {
-      throw new Error(`Bucket ${bucketName} does not exist`);
-    }
-    
-    // Test bucket access
-    await bucket.getMetadata();
-    
-    serviceStatus.googleCloud = {
-      connected: true,
-      lastCheck: new Date().toISOString(),
-      error: null,
-      bucket: bucketName,
-      status: "operational"
-    };
-    
-    console.log(`✅ Google Cloud Storage connection successful (bucket: ${bucketName})`);
-    return true;
     
   } catch (error) {
     serviceStatus.googleCloud = {
@@ -378,26 +364,13 @@ async function startServer() {
     io.emit('service-status', serviceStatus);
   }, 5 * 60 * 1000); // 5 minutes
   
-  server.listen(PORT, async () => {
+  server.listen(PORT, () => {
     console.log(`🚀 TAHLEEL.ai MVP Backend running on port ${PORT}`);
     console.log(`🎯 Target: Arab League Teams ($15K-$45K subscriptions)`);
     console.log(`⚡ Real-time processing with Socket.io enabled`);
     console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
     console.log(`📊 Health check: http://localhost:${PORT}/health`);
     console.log(`📡 Service status: http://localhost:${PORT}/api/status`);
-
-    // 🔧 CRITICAL FIX: Proper try-catch structure for GCS test
-    try {
-      const gcsConnected = await gcsService.testConnection();
-      if (gcsConnected) {
-        console.log('✅ Google Cloud Storage: READY FOR ARAB LEAGUE');
-      } else {
-        console.error('❌ Google Cloud Storage: CONNECTION FAILED');
-        console.error('🚨 CRITICAL: Video uploads will not work!');
-      }
-    } catch (error) {
-      console.error('❌ GCS Test Error:', error.message);
-    }
     
     const operational = serviceStatus.gpt4.connected && 
                        serviceStatus.claude.connected && 
