@@ -377,6 +377,17 @@ async function startServer() {
   
   server.listen(PORT, () => {
     console.log(`🚀 TAHLEEL.ai MVP Backend running on port ${PORT}`);
+
+try {
+    const gcsConnected = await gcsService.testConnection();
+    if (gcsConnected) {
+      console.log('✅ Google Cloud Storage: READY FOR ARAB LEAGUE');
+    } else {
+      console.error('❌ Google Cloud Storage: CONNECTION FAILED');
+      console.error('🚨 CRITICAL: Video uploads will not work!');
+    }
+  } catch (error) {
+    console.error('❌ GCS Test Error:', error.message);
     console.log(`🎯 Target: Arab League Teams ($15K-$45K subscriptions)`);
     console.log(`⚡ Real-time processing with Socket.io enabled`);
     console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
