@@ -15,7 +15,7 @@ class GPT4Service {
       console.log(`🤖 Analyzing frame ${frameNumber} with GPT-4 Vision...`);
       
       const response = await this.client.chat.completions.create({
-        model: "gpt-4-vision-preview",
+        model: "gpt-4o", // ✅ UPDATED: Using current GPT-4 Vision model
         messages: [
           {
             role: "user",
@@ -26,7 +26,7 @@ class GPT4Service {
 
 FRAME INFO:
 - Frame ${frameNumber} at ${timestamp} seconds
-- Focus on tactical analysis for Arab League coaches
+- Focus on tactical analysis for Arab League coaches paying $15K-$45K monthly
 
 ANALYSIS REQUIRED:
 1. FORMATION: Identify the formation (4-3-3, 4-4-2, 3-5-2, etc.)
@@ -36,7 +36,7 @@ ANALYSIS REQUIRED:
 5. DEFENSIVE STRUCTURE: Analyze defensive line, compactness, coverage
 6. KEY INSIGHTS: Specific tactical observations for coaches
 
-RESPONSE FORMAT:
+RESPONSE FORMAT (JSON):
 {
   "formation": "detected formation",
   "team_with_ball": "attacking team analysis",
@@ -172,7 +172,7 @@ Provide detailed tactical intelligence that Arab League coaches can use to gain 
         }));
       
       const response = await this.client.chat.completions.create({
-        model: "gpt-4-turbo-preview",
+        model: "gpt-4o", // ✅ UPDATED: Using current GPT-4 model
         messages: [
           {
             role: "user",
@@ -261,7 +261,7 @@ Provide insights that give Arab League teams competitive advantage worth $15K-$4
       console.log(`🎯 Analyzing ${situationType} situation...`);
       
       const response = await this.client.chat.completions.create({
-        model: "gpt-4-vision-preview",
+        model: "gpt-4o", // ✅ UPDATED: Using current GPT-4 model
         messages: [
           {
             role: "user",
@@ -303,6 +303,41 @@ Provide specific tactical advice for Arab League coaches.`
     } catch (error) {
       console.error(`❌ Tactical situation analysis failed:`, error);
       throw new Error(`Tactical situation analysis failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Test GPT-4 Vision availability
+   */
+  async testGPT4Vision() {
+    try {
+      console.log('🧪 Testing GPT-4 Vision service...');
+      
+      const response = await this.client.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: "Test message to verify GPT-4 Vision model availability"
+          }
+        ],
+        max_tokens: 50
+      });
+
+      console.log('✅ GPT-4 Vision service is operational');
+      return {
+        status: 'operational',
+        model: 'gpt-4o',
+        timestamp: new Date().toISOString()
+      };
+      
+    } catch (error) {
+      console.error('❌ GPT-4 Vision test failed:', error);
+      return {
+        status: 'failed',
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
     }
   }
 }
