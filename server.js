@@ -17,6 +17,9 @@ const OpenAI = require('openai');
 const Anthropic = require('@anthropic-ai/sdk');
 const { Storage } = require('@google-cloud/storage');
 
+// 🔧 CRITICAL FIX: Import GCSService
+const gcsService = require('./services/GCSService');
+
 const app = express();
 const server = createServer(app);
 
@@ -377,22 +380,24 @@ async function startServer() {
   
   server.listen(PORT, async () => {
     console.log(`🚀 TAHLEEL.ai MVP Backend running on port ${PORT}`);
-
-try {
-    const gcsConnected = await gcsService.testConnection();
-    if (gcsConnected) {
-      console.log('✅ Google Cloud Storage: READY FOR ARAB LEAGUE');
-    } else {
-      console.error('❌ Google Cloud Storage: CONNECTION FAILED');
-      console.error('🚨 CRITICAL: Video uploads will not work!');
-    }
-  } catch (error) {
-    console.error('❌ GCS Test Error:', error.message);
     console.log(`🎯 Target: Arab League Teams ($15K-$45K subscriptions)`);
     console.log(`⚡ Real-time processing with Socket.io enabled`);
     console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
     console.log(`📊 Health check: http://localhost:${PORT}/health`);
     console.log(`📡 Service status: http://localhost:${PORT}/api/status`);
+
+    // 🔧 CRITICAL FIX: Proper try-catch structure for GCS test
+    try {
+      const gcsConnected = await gcsService.testConnection();
+      if (gcsConnected) {
+        console.log('✅ Google Cloud Storage: READY FOR ARAB LEAGUE');
+      } else {
+        console.error('❌ Google Cloud Storage: CONNECTION FAILED');
+        console.error('🚨 CRITICAL: Video uploads will not work!');
+      }
+    } catch (error) {
+      console.error('❌ GCS Test Error:', error.message);
+    }
     
     const operational = serviceStatus.gpt4.connected && 
                        serviceStatus.claude.connected && 
