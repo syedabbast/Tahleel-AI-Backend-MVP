@@ -375,7 +375,7 @@ async function startServer() {
     io.emit('service-status', serviceStatus);
   }, 5 * 60 * 1000); // 5 minutes
   
-  server.listen(PORT, () => {
+  server.listen(PORT, async () => {
     console.log(`🚀 TAHLEEL.ai MVP Backend running on port ${PORT}`);
 
 try {
