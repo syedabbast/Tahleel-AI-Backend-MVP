@@ -46,16 +46,18 @@ router.post('/start', async (req, res) => {
       },
       app: req.app // Pass app for Socket.io access
     };
-    
+    // BETTER: Just call controller directly and let it handle the response
+return analysisController.processVideo(analysisRequest, res);
+   
     // Start analysis pipeline (async - returns immediately)
-    setImmediate(() => {
-      analysisController.processVideo(analysisRequest, {
-        json: (result) => {
-          console.log(`✅ Analysis completed for ${videoId}:`, result.success ? 'SUCCESS' : 'FAILED');
-        },
-        status: (code) => ({ json: (result) => console.log(`❌ Analysis failed for ${videoId} with status ${code}`) })
-      });
-    });
+setImmediate(() => {
+  analysisController.processVideo(analysisRequest, {
+    json: (result) => {
+      console.log(`✅ Analysis completed for ${videoId}:`, result.success ? 'SUCCESS' : 'FAILED');
+    },
+    status: (code) => ({ json: (result) => console.log(`❌ Analysis failed for ${videoId} with status ${code}`) })
+  });
+});
     
     res.json({
       success: true,
