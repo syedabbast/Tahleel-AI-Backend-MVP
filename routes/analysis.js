@@ -6,26 +6,26 @@ const router = express.Router();
 
 /**
  * POST /api/analysis/start
- * Start comprehensive tactical analysis pipeline
+ * Start comprehensive tactical analysis pipeline (async job)
  */
 router.post('/start', async (req, res) => {
   try {
     const { videoId, matchMetadata } = req.body;
-    
+
     if (!videoId) {
       return res.status(400).json({
         success: false,
         error: 'videoId is required'
       });
     }
-    
+
     console.log(`🚀 Starting tactical analysis for video: ${videoId}`);
-    
+
     // Find video file in GCS
     const [files] = await gcsService.storage.bucket(gcsService.bucketName).getFiles({
       prefix: `videos/${videoId}/`
     });
-    
+
     if (files.length === 0) {
       return res.status(404).json({
         success: false,
@@ -33,10 +33,10 @@ router.post('/start', async (req, res) => {
         videoId: videoId
       });
     }
-    
+
     const videoFile = files[0];
     const videoFileName = videoFile.name;
-    
+
     // Prepare request for analysis controller
     const analysisRequest = {
       body: {
@@ -46,31 +46,11 @@ router.post('/start', async (req, res) => {
       },
       app: req.app // Pass app for Socket.io access
     };
-    // BETTER: Just call controller directly and let it handle the response
-return analysisController.processVideo(analysisRequest, res);
-   
-    // Start analysis pipeline (async - returns immediately)
-setImmediate(() => {
-  analysisController.processVideo(analysisRequest, {
-    json: (result) => {
-      console.log(`✅ Analysis completed for ${videoId}:`, result.success ? 'SUCCESS' : 'FAILED');
-    },
-    status: (code) => ({ json: (result) => console.log(`❌ Analysis failed for ${videoId} with status ${code}`) })
-  });
-});
-    
-    res.json({
-      success: true,
-      videoId: videoId,
-      status: 'analysis_started',
-      message: 'Tactical analysis pipeline started',
-      estimatedTime: '3-5 minutes',
-      trackingInfo: {
-        socketRoom: `analysis-${videoId}`,
-        progressEvents: ['analysis-progress', 'analysis-completed', 'analysis-error']
-      }
-    });
-    
+
+    // Start analysis job asynchronously and return immediately
+    await analysisController.startAnalysisJob(analysisRequest, res);
+
+    // The controller will handle the immediate response and launch background processing.
   } catch (error) {
     console.error('❌ Error starting analysis:', error);
     res.status(500).json({
@@ -88,21 +68,21 @@ setImmediate(() => {
 router.post('/quick', async (req, res) => {
   try {
     const { videoId, urgencyLevel = 'high' } = req.body;
-    
+
     if (!videoId) {
       return res.status(400).json({
         success: false,
         error: 'videoId is required'
       });
     }
-    
+
     console.log(`⚡ Starting quick analysis for video: ${videoId}`);
-    
+
     // Find video file in GCS
     const [files] = await gcsService.storage.bucket(gcsService.bucketName).getFiles({
       prefix: `videos/${videoId}/`
     });
-    
+
     if (files.length === 0) {
       return res.status(404).json({
         success: false,
@@ -110,10 +90,10 @@ router.post('/quick', async (req, res) => {
         videoId: videoId
       });
     }
-    
+
     const videoFile = files[0];
     const videoFileName = videoFile.name;
-    
+
     // Prepare request for quick analysis
     const quickAnalysisRequest = {
       body: {
@@ -123,31 +103,11 @@ router.post('/quick', async (req, res) => {
       },
       app: req.app
     };
-    
-    // Start quick analysis pipeline
-    setImmediate(() => {
-      analysisController.processQuickAnalysis(quickAnalysisRequest, {
-        json: (result) => {
-          console.log(`⚡ Quick analysis completed for ${videoId}:`, result.success ? 'SUCCESS' : 'FAILED');
-        },
-        status: (code) => ({ json: (result) => console.log(`❌ Quick analysis failed for ${videoId}`) })
-      });
-    });
-    
-    res.json({
-      success: true,
-      videoId: videoId,
-      type: 'quick_analysis',
-      urgencyLevel: urgencyLevel,
-      status: 'quick_analysis_started',
-      message: 'Quick tactical analysis started',
-      estimatedTime: '30-60 seconds',
-      trackingInfo: {
-        socketRoom: `analysis-${videoId}`,
-        progressEvents: ['quick-analysis-progress', 'quick-analysis-completed']
-      }
-    });
-    
+
+    // Start quick analysis pipeline asynchronously and return immediately
+    await analysisController.processQuickAnalysis(quickAnalysisRequest, res);
+
+    // The controller handles both immediate response and analysis.
   } catch (error) {
     console.error('❌ Error starting quick analysis:', error);
     res.status(500).json({
@@ -165,14 +125,14 @@ router.post('/quick', async (req, res) => {
 router.get('/status/:videoId', async (req, res) => {
   try {
     const { videoId } = req.params;
-    
+
     // Use analysis controller to get status
     const statusRequest = {
       params: { videoId: videoId }
     };
-    
+
     await analysisController.getAnalysisStatus(statusRequest, res);
-    
+
   } catch (error) {
     console.error('❌ Error getting analysis status:', error);
     res.status(500).json({
@@ -191,14 +151,14 @@ router.post('/resume/:videoId', async (req, res) => {
   try {
     const { videoId } = req.params;
     const { fromStage = 'frame_extraction' } = req.body;
-    
+
     console.log(`🔄 Resuming analysis for video: ${videoId} from stage: ${fromStage}`);
-    
+
     // Find video file
     const [files] = await gcsService.storage.bucket(gcsService.bucketName).getFiles({
       prefix: `videos/${videoId}/`
     });
-    
+
     if (files.length === 0) {
       return res.status(404).json({
         success: false,
@@ -206,10 +166,10 @@ router.post('/resume/:videoId', async (req, res) => {
         videoId: videoId
       });
     }
-    
+
     const videoFile = files[0];
     const videoFileName = videoFile.name;
-    
+
     // Check what stages are already completed
     const stageStatus = {
       frame_extraction: await gcsService.storage.bucket(gcsService.bucketName).getFiles({
@@ -217,7 +177,7 @@ router.post('/resume/:videoId', async (req, res) => {
       }).then(([files]) => files.length > 0),
       analysis_result: await gcsService.fileExists(`results/${videoId}/analysis.json`)
     };
-    
+
     // Determine resume strategy
     let resumeStage = fromStage;
     if (stageStatus.analysis_result) {
@@ -228,7 +188,7 @@ router.post('/resume/:videoId', async (req, res) => {
         message: 'Analysis already completed'
       });
     }
-    
+
     // Restart analysis from appropriate stage
     const resumeRequest = {
       body: {
@@ -239,25 +199,10 @@ router.post('/resume/:videoId', async (req, res) => {
       },
       app: req.app
     };
-    
-    setImmediate(() => {
-      analysisController.processVideo(resumeRequest, {
-        json: (result) => {
-          console.log(`🔄 Resumed analysis for ${videoId}:`, result.success ? 'SUCCESS' : 'FAILED');
-        },
-        status: (code) => ({ json: (result) => console.log(`❌ Resume failed for ${videoId}`) })
-      });
-    });
-    
-    res.json({
-      success: true,
-      videoId: videoId,
-      status: 'analysis_resumed',
-      resumedFromStage: resumeStage,
-      stageStatus: stageStatus,
-      message: 'Analysis resumed successfully'
-    });
-    
+
+    // Use the async job starter for resume as well
+    await analysisController.startAnalysisJob(resumeRequest, res);
+
   } catch (error) {
     console.error('❌ Error resuming analysis:', error);
     res.status(500).json({
@@ -276,16 +221,16 @@ router.post('/cancel/:videoId', async (req, res) => {
   try {
     const { videoId } = req.params;
     const io = req.app.get('io');
-    
+
     console.log(`🛑 Cancelling analysis for video: ${videoId}`);
-    
+
     // Emit cancellation event
     io.to(`analysis-${videoId}`).emit('analysis-cancelled', {
       videoId: videoId,
       status: 'cancelled',
       timestamp: new Date().toISOString()
     });
-    
+
     // Cleanup temporary files
     setTimeout(async () => {
       try {
@@ -295,14 +240,14 @@ router.post('/cancel/:videoId', async (req, res) => {
         console.error('❌ Cleanup failed for cancelled analysis:', cleanupError);
       }
     }, 5000);
-    
+
     res.json({
       success: true,
       videoId: videoId,
       status: 'cancelled',
       message: 'Analysis cancelled successfully'
     });
-    
+
   } catch (error) {
     console.error('❌ Error cancelling analysis:', error);
     res.status(500).json({
@@ -320,24 +265,24 @@ router.post('/cancel/:videoId', async (req, res) => {
 router.get('/history', async (req, res) => {
   try {
     const { limit = 10, offset = 0 } = req.query;
-    
+
     console.log('📊 Fetching analysis history...');
-    
+
     // Get all result files from GCS
     const [resultFiles] = await gcsService.storage.bucket(gcsService.bucketName).getFiles({
       prefix: 'results/'
     });
-    
+
     const analysisHistory = [];
-    
+
     // Process result files (limit to avoid timeout)
     const filesToProcess = resultFiles.slice(offset, offset + parseInt(limit));
-    
+
     for (const file of filesToProcess) {
       try {
         const [content] = await file.download();
         const analysisData = JSON.parse(content.toString());
-        
+
         analysisHistory.push({
           videoId: analysisData.videoId,
           processingTime: analysisData.processing_stats?.total_time,
@@ -350,7 +295,7 @@ router.get('/history', async (req, res) => {
         console.error('❌ Error parsing analysis file:', parseError);
       }
     }
-    
+
     res.json({
       success: true,
       history: analysisHistory,
@@ -361,7 +306,7 @@ router.get('/history', async (req, res) => {
       },
       message: 'Analysis history retrieved successfully'
     });
-    
+
   } catch (error) {
     console.error('❌ Error getting analysis history:', error);
     res.status(500).json({
@@ -384,7 +329,7 @@ router.get('/test', (req, res) => {
     pipeline: {
       stage1: 'Frame Extraction (FFmpeg)',
       stage2: 'GPT-4 Vision Analysis',
-      stage3: 'Claude Tactical Enhancement', 
+      stage3: 'Claude Tactical Enhancement',
       stage4: 'Final Report Generation'
     },
     endpoints: {
