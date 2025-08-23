@@ -142,63 +142,20 @@ class FrameService {
   }
 
   /**
-   * Calculate frame timestamps based on interval, ensuring at least 10 frames.
+   * Calculate frame timestamps based on interval
    */
   calculateFrameTimestamps(duration) {
-    const minFrames = 10;
-    let timestamps = [];
-
-    if (duration < minFrames) {
-      // For very short videos, just spread timestamps evenly after 1s
-      for (let i = 0; i < minFrames; i++) {
-        // Avoid 0 and duration, spread across duration
-        let ts = Math.max(1, Math.floor((duration * (i + 1)) / (minFrames + 1)));
-        timestamps.push(ts);
-      }
-      return timestamps;
-    }
-
-    // For normal/long videos:
+    const timestamps = [];
     // Always include first frame after 5s for better quality
     timestamps.push(5);
-
-    // Evenly distribute remaining frames (excluding start/end edge)
-    let frameCount = minFrames - 2; // Exclude 5s and end frame
-    let start = this.frameInterval;
-    let end = duration - 10;
-
-    if (end <= start) {
-      // Short video, just fill evenly
-      for (let i = 1; i < minFrames - 1; i++) {
-        let ts = Math.floor((duration * i) / minFrames);
-        timestamps.push(ts);
-      }
-    } else {
-      let interval = (end - start) / (frameCount - 1);
-      for (let i = 0; i < frameCount; i++) {
-        let ts = Math.floor(start + i * interval);
-        timestamps.push(ts);
-      }
+    // Extract frames at regular intervals
+    for (let time = this.frameInterval; time < duration - 10; time += this.frameInterval) {
+      timestamps.push(time);
     }
-
     // Always include a frame near the end
-    timestamps.push(duration > 10 ? duration - 10 : duration - 1);
-
-    // Remove any duplicate timestamps (just in case for short videos)
-    timestamps = [...new Set(timestamps)].filter(ts => ts > 0 && ts < duration);
-
-    // If we have fewer than 10 frames (e.g., extremely short videos), fill in more
-    while (timestamps.length < minFrames) {
-      // Fill in additional timestamps evenly
-      let ts = Math.floor((duration * (timestamps.length + 1)) / (minFrames + 1));
-      if (!timestamps.includes(ts) && ts > 0 && ts < duration) {
-        timestamps.push(ts);
-      }
+    if (duration > 20) {
+      timestamps.push(duration - 10);
     }
-
-    // Sort for sanity
-    timestamps.sort((a, b) => a - b);
-
     return timestamps;
   }
 
