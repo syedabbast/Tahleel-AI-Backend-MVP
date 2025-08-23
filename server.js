@@ -49,154 +49,21 @@ let serviceStatus = {
   googleCloud: { connected: false, lastCheck: null, error: null }
 };
 
-/**
- * Check GPT-4 connection
- */
-async function checkGPT4Connection() {
-  try {
-    console.log('🤖 Testing GPT-4 connection...');
-    
-    const response = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [{ role: "user", content: "Test connection" }],
-      max_tokens: 5
-    });
-    
-    serviceStatus.gpt4 = {
-      connected: true,
-      lastCheck: new Date().toISOString(),
-      error: null,
-      model: "gpt-4",
-      status: "operational"
-    };
-    
-    console.log('✅ GPT-4 connection successful');
-    return true;
-    
-  } catch (error) {
-    serviceStatus.gpt4 = {
-      connected: false,
-      lastCheck: new Date().toISOString(),
-      error: error.message,
-      status: "failed"
-    };
-    
-    console.error('❌ GPT-4 connection failed:', error.message);
-    return false;
-  }
-}
+// ----------- CORS FIX START --------------
+const allowedOrigins = [
+  'https://tahleel.netlify.app', // Add your frontend domain here
+  process.env.FRONTEND_URL || "http://localhost:3000",
+];
 
-/**
- * Check Claude connection
- */
-async function checkClaudeConnection() {
-  try {
-    console.log('🧠 Testing Claude connection...');
-    
-    const response = await claude.messages.create({
-      model: "claude-3-haiku-20240307",
-      max_tokens: 5,
-      messages: [{ role: "user", content: "Test connection" }]
-    });
-    
-    serviceStatus.claude = {
-      connected: true,
-      lastCheck: new Date().toISOString(),
-      error: null,
-      model: "claude-3-haiku-20240307",
-      status: "operational"
-    };
-    
-    console.log('✅ Claude connection successful');
-    return true;
-    
-  } catch (error) {
-    serviceStatus.claude = {
-      connected: false,
-      lastCheck: new Date().toISOString(),
-      error: error.message,
-      status: "failed"
-    };
-    
-    console.error('❌ Claude connection failed:', error.message);
-    return false;
-  }
-}
-
-/**
- * Check Google Cloud Storage connection using gcsService
- */
-async function checkGoogleCloudConnection() {
-  try {
-    console.log('☁️ Testing Google Cloud Storage connection...');
-    
-    // Use the working gcsService instead of duplicate implementation
-    const connected = await gcsService.testConnection();
-    
-    if (connected) {
-      serviceStatus.googleCloud = {
-        connected: true,
-        lastCheck: new Date().toISOString(),
-        error: null,
-        bucket: process.env.GOOGLE_CLOUD_STORAGE_BUCKET,
-        status: "operational"
-      };
-      
-      console.log('✅ Google Cloud Storage connection successful');
-      return true;
-    } else {
-      throw new Error('GCS connection test returned false');
-    }
-    
-  } catch (error) {
-    serviceStatus.googleCloud = {
-      connected: false,
-      lastCheck: new Date().toISOString(),
-      error: error.message,
-      status: "failed"
-    };
-    
-    console.error('❌ Google Cloud Storage connection failed:', error.message);
-    return false;
-  }
-}
-
-/**
- * Check all service connections
- */
-async function checkAllServices() {
-  console.log('🔍 Checking all service connections...');
-  
-  const checks = await Promise.allSettled([
-    checkGPT4Connection(),
-    checkClaudeConnection(),
-    checkGoogleCloudConnection()
-  ]);
-  
-  const allConnected = checks.every(check => 
-    check.status === 'fulfilled' && check.value === true
-  );
-  
-  console.log(`📊 Service Status Summary:`);
-  console.log(`   GPT-4: ${serviceStatus.gpt4.connected ? '✅ Connected' : '❌ Failed'}`);
-  console.log(`   Claude: ${serviceStatus.claude.connected ? '✅ Connected' : '❌ Failed'}`);
-  console.log(`   Google Cloud: ${serviceStatus.googleCloud.connected ? '✅ Connected' : '❌ Failed'}`);
-  
-  if (allConnected) {
-    console.log('🎉 All services operational - Ready for Arab League deployment!');
-  } else {
-    console.log('⚠️ Some services failed - Check configuration before launch');
-  }
-  
-  return allConnected;
-}
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
+// ----------- CORS FIX END --------------
 
 // Middleware
-app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:3000",
-  credentials: true
-}));
-
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
