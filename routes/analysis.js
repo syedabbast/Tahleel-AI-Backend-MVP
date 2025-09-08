@@ -7,6 +7,7 @@ const router = express.Router();
 /**
  * POST /api/analysis/start
  * Start comprehensive tactical analysis pipeline (async job)
+ * ENFORCES PER-USER MONTHLY QUOTA
  */
 router.post('/start', async (req, res) => {
   try {
@@ -18,6 +19,53 @@ router.post('/start', async (req, res) => {
         error: 'videoId is required'
       });
     }
+
+    // === ENTERPRISE QUOTA ENFORCEMENT ===
+    const MONTHLY_QUOTA = 10;
+    // Get userId/userEmail from matchMetadata (passed from frontend)
+    const userId = matchMetadata?.userId;
+    const userEmail = matchMetadata?.userEmail;
+    if (!userId && !userEmail) {
+      return res.status(401).json({
+        success: false,
+        error: 'userId or userEmail required for quota enforcement'
+      });
+    }
+
+    // Count number of completed analyses for this user in the current month
+    const [resultFiles] = await gcsService.storage.bucket(gcsService.bucketName).getFiles({
+      prefix: 'results/'
+    });
+
+    const now = new Date();
+    const thisMonth = now.getMonth();
+    let quotaUsed = 0;
+
+    for (const file of resultFiles) {
+      try {
+        const [content] = await file.download();
+        const analysisData = JSON.parse(content.toString());
+        const md = analysisData.matchMetadata || {};
+        if (
+          ((userId && md.userId === userId) ||
+           (userEmail && md.userEmail === userEmail))
+        ) {
+          const date = new Date(analysisData.analysis_state?.endTime || analysisData.analysis_state?.startTime);
+          if (date.getMonth() === thisMonth && date.getFullYear() === now.getFullYear()) {
+            quotaUsed++;
+          }
+        }
+      } catch {}
+    }
+
+    if (quotaUsed >= MONTHLY_QUOTA) {
+      return res.status(403).json({
+        success: false,
+        error: 'Monthly quota exceeded',
+        quota: { used: quotaUsed, allowed: MONTHLY_QUOTA }
+      });
+    }
+    // === END QUOTA ENFORCEMENT ===
 
     console.log(`🚀 Starting tactical analysis for video: ${videoId}`);
 
@@ -260,11 +308,12 @@ router.post('/cancel/:videoId', async (req, res) => {
 
 /**
  * GET /api/analysis/history
- * Get analysis history for all videos
+ * Get analysis history for current user only (multi-user filter)
  */
 router.get('/history', async (req, res) => {
   try {
-    const { limit = 10, offset = 0 } = req.query;
+    // Accept userId/userEmail from query params
+    const { limit = 10, offset = 0, userId, userEmail } = req.query;
 
     console.log('📊 Fetching analysis history...');
 
@@ -275,13 +324,18 @@ router.get('/history', async (req, res) => {
 
     const analysisHistory = [];
 
-    // Process result files (limit to avoid timeout)
+    // Process files (limit to avoid timeout)
     const filesToProcess = resultFiles.slice(offset, offset + parseInt(limit));
 
     for (const file of filesToProcess) {
       try {
         const [content] = await file.download();
         const analysisData = JSON.parse(content.toString());
+        const md = analysisData.matchMetadata || {};
+
+        // If userId/userEmail provided, filter jobs for this user only
+        if (userId && md.userId !== userId) continue;
+        if (userEmail && md.userEmail !== userEmail) continue;
 
         analysisHistory.push({
           videoId: analysisData.videoId,
@@ -302,7 +356,7 @@ router.get('/history', async (req, res) => {
       pagination: {
         limit: parseInt(limit),
         offset: parseInt(offset),
-        total: resultFiles.length
+        total: analysisHistory.length
       },
       message: 'Analysis history retrieved successfully'
     });
