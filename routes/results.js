@@ -4,40 +4,71 @@ const gcsService = require('../services/gcsService');
 const router = express.Router();
 
 /**
+ * Helper: Check if requesting user owns this video/analysis
+ */
+async function checkOwnership(videoId, req) {
+  // Accept userId/userEmail from frontend (query or headers)
+  const userId = req.query.userId || req.headers['x-user-id'];
+  const userEmail = req.query.userEmail || req.headers['x-user-email'];
+
+  if (!userId && !userEmail) {
+    // No user info provided - block access!
+    return { allowed: false, reason: 'Missing user information' };
+  }
+
+  // Download analysis result metadata
+  let analysisResult;
+  try {
+    analysisResult = await gcsService.downloadAnalysisResult(videoId);
+  } catch (err) {
+    return { allowed: false, reason: 'Analysis result not found' };
+  }
+
+  const matchMetadata = analysisResult.matchMetadata || {};
+
+  // Owner match logic (must match one)
+  const isOwner =
+    (userId && matchMetadata.userId === userId) ||
+    (userEmail && matchMetadata.userEmail === userEmail);
+
+  if (!isOwner) {
+    return { allowed: false, reason: 'User does not own this analysis result' };
+  }
+
+  return { allowed: true, matchMetadata, analysisResult };
+}
+
+/**
  * GET /api/results/:videoId
  * Get complete tactical analysis results - FIXED for frontend display
+ * 🔒 PRIVACY: Only allow owner to access
  */
 router.get('/:videoId', async (req, res) => {
   try {
     const { videoId } = req.params;
     const { format = 'json' } = req.query;
-    
-    console.log(`📊 Retrieving results for video: ${videoId}`);
-    
-    // Check if analysis result exists
-    const resultExists = await gcsService.fileExists(`results/${videoId}/analysis.json`);
-    
-    if (!resultExists) {
-      return res.status(404).json({
+
+    // PRIVACY: Check user ownership
+    const ownership = await checkOwnership(videoId, req);
+    if (!ownership.allowed) {
+      return res.status(403).json({
         success: false,
-        error: 'Analysis results not found',
-        videoId: videoId,
-        message: 'Analysis may still be processing or failed'
+        error: 'Access denied',
+        message: ownership.reason || 'You do not have permission to view this analysis result',
+        videoId
       });
     }
-    
-    // Download analysis result
-    const analysisResult = await gcsService.downloadAnalysisResult(videoId);
-    
-    // FIXED: Extract real data from nested structure for frontend
+    // Use analysisResult from checkOwnership to avoid redundant download
+    const analysisResult = ownership.analysisResult;
+
+    // Extract data as before
     const enhancedAnalysis = analysisResult.claude_enhancement?.enhanced_analysis || {};
     const gpt4Analysis = analysisResult.gpt4_analysis || {};
     const matchMetadata = analysisResult.matchMetadata || {};
     const processingStats = analysisResult.processing_stats || {};
-    
-    // Format response based on requested format
+
+    // Format response based on requested format (unchanged)
     if (format === 'summary') {
-      // Return executive summary only - FIXED structure
       const summary = {
         videoId: videoId,
         processingTime: processingStats.total_time,
@@ -48,7 +79,6 @@ router.get('/:videoId', async (req, res) => {
         analysisDate: analysisResult.analysis_state?.endTime,
         matchInfo: matchMetadata
       };
-      
       return res.json({
         success: true,
         videoId: videoId,
@@ -56,9 +86,8 @@ router.get('/:videoId', async (req, res) => {
         result: summary
       });
     }
-    
+
     if (format === 'report') {
-      // FIXED: Build proper tactical report structure from real Claude data
       const tacticalReport = {
         reportHeader: {
           title: 'TAHLEEL.ai Tactical Analysis Report',
@@ -68,14 +97,12 @@ router.get('/:videoId', async (req, res) => {
           processingTime: processingStats.total_time,
           confidenceLevel: enhancedAnalysis.confidence_score || 85
         },
-        
         executiveSummary: {
           keyWeaknesses: enhancedAnalysis.executive_summary?.key_weaknesses || [],
           formationRecommendations: enhancedAnalysis.executive_summary?.formation_recommendations || [],
           coachingInstructions: enhancedAnalysis.executive_summary?.coaching_instructions || [],
           expectedImpact: "Significant tactical advantage through AI-powered analysis"
         },
-        
         tacticalAnalysis: {
           overallAssessment: enhancedAnalysis.tactical_intelligence?.overall_assessment || 'Comprehensive analysis completed',
           patternAnalysis: enhancedAnalysis.tactical_intelligence?.pattern_analysis || 'Multiple tactical patterns identified',
@@ -88,32 +115,27 @@ router.get('/:videoId', async (req, res) => {
             set_pieces: 'Set piece situations analyzed for tactical advantage'
           }
         },
-        
         strategicRecommendations: {
           formationChanges: enhancedAnalysis.actionable_recommendations?.formation_adjustments || [],
           playerInstructions: enhancedAnalysis.actionable_recommendations?.player_instructions || [],
           setPieceOpportunities: enhancedAnalysis.actionable_recommendations?.set_piece_opportunities || [],
           immediateActions: enhancedAnalysis.actionable_recommendations?.immediate_actions || []
         },
-        
         competitiveAdvantage: {
           exploitationStrategies: enhancedAnalysis.competitive_advantage?.exploitation_strategies || [],
           counterTactics: enhancedAnalysis.competitive_advantage?.counter_tactics || [],
           matchWinningMoves: enhancedAnalysis.competitive_advantage?.match_winning_moves || []
         },
-        
         arabLeagueInsights: {
           regionalConsiderations: enhancedAnalysis.arab_league_insights?.regional_considerations || 'Regional tactical preferences considered',
           climateAdaptations: enhancedAnalysis.arab_league_insights?.climate_adaptations || 'Climate factors analyzed',
           culturalTactics: enhancedAnalysis.arab_league_insights?.cultural_tactics || 'Local playing styles incorporated'
         },
-        
         implementationGuide: {
           preMatchPreparation: enhancedAnalysis.actionable_recommendations?.immediate_actions || [],
           inMatchAdjustments: enhancedAnalysis.actionable_recommendations?.formation_adjustments || [],
           postMatchReview: ['Review tactical execution', 'Analyze formation effectiveness', 'Assess player positioning']
         },
-        
         analysisMetrics: {
           framesAnalyzed: analysisResult.frame_extraction?.total_frames || 0,
           gpt4Analyses: gpt4Analysis.frame_analyses?.length || 0,
@@ -122,7 +144,6 @@ router.get('/:videoId', async (req, res) => {
           confidenceScore: enhancedAnalysis.confidence_score || 85
         }
       };
-      
       return res.json({
         success: true,
         videoId: videoId,
@@ -130,25 +151,19 @@ router.get('/:videoId', async (req, res) => {
         result: tacticalReport
       });
     }
-    
+
     // Default: return full analysis - FIXED structure
     const completeResult = {
       videoId: videoId,
       matchMetadata: matchMetadata,
       processingStats: processingStats,
       analysisState: analysisResult.analysis_state,
-      
-      // REAL GPT-4 Analysis Data
       gpt4Analysis: {
         frameAnalyses: gpt4Analysis.frame_analyses || [],
         matchSummary: gpt4Analysis.match_summary || {},
         framesProcessed: gpt4Analysis.frame_analyses?.length || 0
       },
-      
-      // REAL Claude Enhancement Data
       claudeAnalysis: enhancedAnalysis,
-      
-      // Tactical Report Data (extracted from Claude response)
       tacticalReport: {
         executiveSummary: enhancedAnalysis.executive_summary || {},
         tacticalIntelligence: enhancedAnalysis.tactical_intelligence || {},
@@ -158,7 +173,7 @@ router.get('/:videoId', async (req, res) => {
         confidenceScore: enhancedAnalysis.confidence_score || 85
       }
     };
-    
+
     res.json({
       success: true,
       videoId: videoId,
@@ -166,7 +181,7 @@ router.get('/:videoId', async (req, res) => {
       result: completeResult,
       retrievedAt: new Date().toISOString()
     });
-    
+
   } catch (error) {
     console.error('❌ Error retrieving results:', error);
     res.status(500).json({
@@ -180,20 +195,29 @@ router.get('/:videoId', async (req, res) => {
 /**
  * GET /api/results/:videoId/tactical-report
  * Get formatted tactical report for coaches - FIXED with real data
+ * 🔒 PRIVACY: Only owner can view
  */
 router.get('/:videoId/tactical-report', async (req, res) => {
   try {
     const { videoId } = req.params;
-    
-    console.log(`📋 Generating tactical report for video: ${videoId}`);
-    
-    const analysisResult = await gcsService.downloadAnalysisResult(videoId);
+    // PRIVACY: Check user ownership
+    const ownership = await checkOwnership(videoId, req);
+    if (!ownership.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied',
+        message: ownership.reason || 'You do not have permission to view this tactical report',
+        videoId
+      });
+    }
+    const analysisResult = ownership.analysisResult;
+
     const enhancedAnalysis = analysisResult.claude_enhancement?.enhanced_analysis || {};
     const gpt4Analysis = analysisResult.gpt4_analysis || {};
     const matchMetadata = analysisResult.matchMetadata || {};
     const processingStats = analysisResult.processing_stats || {};
-    
-    // FIXED: Build tactical report from REAL Claude data only
+
+    // Build tactical report from REAL Claude data only
     const tacticalReport = {
       reportHeader: {
         title: 'TAHLEEL.ai Tactical Analysis Report',
@@ -203,11 +227,7 @@ router.get('/:videoId/tactical-report', async (req, res) => {
         processingTime: processingStats.total_time,
         confidenceLevel: enhancedAnalysis.confidence_score || 'N/A'
       },
-      
-      // Use REAL Claude executive summary data
       executiveSummary: enhancedAnalysis.executive_summary || {},
-      
-      // Use REAL Claude tactical intelligence
       tacticalAnalysis: {
         overallAssessment: enhancedAnalysis.tactical_intelligence?.overall_assessment || 'Analysis completed successfully',
         patternAnalysis: enhancedAnalysis.tactical_intelligence?.pattern_analysis || 'Tactical patterns identified',
@@ -216,24 +236,15 @@ router.get('/:videoId/tactical-report', async (req, res) => {
         keyWeaknesses: enhancedAnalysis.executive_summary?.key_weaknesses || [],
         criticalWeaknesses: gpt4Analysis.match_summary?.critical_weaknesses || []
       },
-      
-      // Use REAL Claude actionable recommendations
       strategicRecommendations: enhancedAnalysis.actionable_recommendations || {},
-      
-      // Use REAL Claude competitive advantage
       competitiveAdvantage: enhancedAnalysis.competitive_advantage || {},
-      
-      // Use REAL Claude Arab League insights
       arabLeagueInsights: enhancedAnalysis.arab_league_insights || {},
-      
-      // Build implementation guide from real recommendations
       implementationGuide: {
         immediateActions: enhancedAnalysis.actionable_recommendations?.immediate_actions || [],
         formationAdjustments: enhancedAnalysis.actionable_recommendations?.formation_adjustments || [],
         playerInstructions: enhancedAnalysis.actionable_recommendations?.player_instructions || [],
         setPieceOpportunities: enhancedAnalysis.actionable_recommendations?.set_piece_opportunities || []
       },
-      
       analysisMetrics: {
         framesAnalyzed: analysisResult.frame_extraction?.total_frames || 0,
         gpt4Analyses: gpt4Analysis.frame_analyses?.length || 0,
@@ -242,7 +253,7 @@ router.get('/:videoId/tactical-report', async (req, res) => {
         aiModelsUsed: ['GPT-4 Vision', 'Claude 3.5 Sonnet']
       }
     };
-    
+
     res.json({
       success: true,
       videoId: videoId,
@@ -251,7 +262,7 @@ router.get('/:videoId/tactical-report', async (req, res) => {
       generatedAt: new Date().toISOString(),
       subscriptionValue: '$15K-$45K monthly tactical intelligence'
     });
-    
+
   } catch (error) {
     console.error('❌ Error generating tactical report:', error);
     res.status(500).json({
@@ -265,48 +276,53 @@ router.get('/:videoId/tactical-report', async (req, res) => {
 /**
  * GET /api/results/:videoId/quick-insights
  * Get quick tactical insights - FIXED with real Claude data
+ * 🔒 PRIVACY: Only owner can view
  */
 router.get('/:videoId/quick-insights', async (req, res) => {
   try {
     const { videoId } = req.params;
-    
-    console.log(`⚡ Retrieving quick insights for video: ${videoId}`);
-    
-    const analysisResult = await gcsService.downloadAnalysisResult(videoId);
+    // PRIVACY: Check user ownership
+    const ownership = await checkOwnership(videoId, req);
+    if (!ownership.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied',
+        message: ownership.reason || 'You do not have permission to view quick insights',
+        videoId
+      });
+    }
+    const analysisResult = ownership.analysisResult;
+
     const enhancedAnalysis = analysisResult.claude_enhancement?.enhanced_analysis || {};
     const gpt4Analysis = analysisResult.gpt4_analysis || {};
-    
-    // FIXED: Extract real insights from Claude data
+
+    // Extract real insights from Claude data
     const quickInsights = {
       immediateActions: {
         top3Weaknesses: enhancedAnalysis.executive_summary?.key_weaknesses?.slice(0, 3) || [],
         formationAdvice: enhancedAnalysis.executive_summary?.formation_recommendations?.[0] || 'Formation analysis available',
         keyInstructions: enhancedAnalysis.executive_summary?.coaching_instructions?.slice(0, 3) || []
       },
-      
       tacticalHighlights: {
         criticalWeakness: enhancedAnalysis.executive_summary?.key_weaknesses?.[0] || 'Primary weakness identified',
         bestOpportunity: enhancedAnalysis.actionable_recommendations?.immediate_actions?.[0] || 'Exploitation opportunity available',
         confidenceLevel: enhancedAnalysis.confidence_score || 85,
         overallAssessment: enhancedAnalysis.tactical_intelligence?.overall_assessment || 'Analysis completed'
       },
-      
       coachingPoints: {
         formations: enhancedAnalysis.executive_summary?.formation_recommendations || [],
         instructions: enhancedAnalysis.executive_summary?.coaching_instructions || [],
         immediateActions: enhancedAnalysis.actionable_recommendations?.immediate_actions || [],
         setPieces: enhancedAnalysis.actionable_recommendations?.set_piece_opportunities || []
       },
-      
       competitiveEdge: {
         exploitationStrategies: enhancedAnalysis.competitive_advantage?.exploitation_strategies || [],
         counterTactics: enhancedAnalysis.competitive_advantage?.counter_tactics || [],
         matchWinningMoves: enhancedAnalysis.competitive_advantage?.match_winning_moves || []
       },
-      
       arabLeagueContext: enhancedAnalysis.arab_league_insights || {}
     };
-    
+
     res.json({
       success: true,
       videoId: videoId,
@@ -316,7 +332,7 @@ router.get('/:videoId/quick-insights', async (req, res) => {
       useCase: 'Immediate tactical preparation',
       generatedAt: new Date().toISOString()
     });
-    
+
   } catch (error) {
     console.error('❌ Error retrieving quick insights:', error);
     res.status(500).json({
@@ -330,18 +346,26 @@ router.get('/:videoId/quick-insights', async (req, res) => {
 /**
  * GET /api/results/:videoId/raw-analysis
  * Get raw AI analysis data for technical review
+ * 🔒 PRIVACY: Only owner can view
  */
 router.get('/:videoId/raw-analysis', async (req, res) => {
   try {
     const { videoId } = req.params;
     const { component = 'all' } = req.query;
-    
-    console.log(`🔧 Retrieving raw analysis for video: ${videoId}, component: ${component}`);
-    
-    const analysisResult = await gcsService.downloadAnalysisResult(videoId);
-    
+    // PRIVACY: Check user ownership
+    const ownership = await checkOwnership(videoId, req);
+    if (!ownership.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied',
+        message: ownership.reason || 'You do not have permission to view raw analysis data',
+        videoId
+      });
+    }
+    const analysisResult = ownership.analysisResult;
+
     let rawData = {};
-    
+
     switch (component) {
       case 'frames':
         rawData = {
@@ -349,25 +373,22 @@ router.get('/:videoId/raw-analysis', async (req, res) => {
           frameAnalyses: analysisResult.gpt4_analysis?.frame_analyses
         };
         break;
-        
       case 'gpt4':
         rawData = {
           gpt4Analysis: analysisResult.gpt4_analysis,
           processingStats: analysisResult.processing_stats
         };
         break;
-        
       case 'claude':
         rawData = {
           claudeEnhancement: analysisResult.claude_enhancement,
           finalReport: analysisResult.final_report
         };
         break;
-        
       default:
         rawData = analysisResult;
     }
-    
+
     res.json({
       success: true,
       videoId: videoId,
@@ -382,7 +403,7 @@ router.get('/:videoId/raw-analysis', async (req, res) => {
       },
       retrievedAt: new Date().toISOString()
     });
-    
+
   } catch (error) {
     console.error('❌ Error retrieving raw analysis:', error);
     res.status(500).json({
@@ -396,16 +417,24 @@ router.get('/:videoId/raw-analysis', async (req, res) => {
 /**
  * POST /api/results/:videoId/export
  * Export analysis results in various formats
+ * 🔒 PRIVACY: Only owner can export
  */
 router.post('/:videoId/export', async (req, res) => {
   try {
     const { videoId } = req.params;
     const { format = 'pdf', sections = ['all'] } = req.body;
-    
-    console.log(`📤 Exporting results for video: ${videoId} in format: ${format}`);
-    
-    const analysisResult = await gcsService.downloadAnalysisResult(videoId);
-    
+    // PRIVACY: Check user ownership
+    const ownership = await checkOwnership(videoId, req);
+    if (!ownership.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied',
+        message: ownership.reason || 'You do not have permission to export results',
+        videoId
+      });
+    }
+    const analysisResult = ownership.analysisResult;
+
     const exportData = {
       videoId: videoId,
       exportFormat: format,
@@ -424,7 +453,7 @@ router.post('/:videoId/export', async (req, res) => {
         rawData: sections.includes('technical') || sections.includes('raw')
       }
     };
-    
+
     res.json({
       success: true,
       videoId: videoId,
@@ -432,7 +461,7 @@ router.post('/:videoId/export', async (req, res) => {
       message: `Analysis export prepared in ${format} format`,
       note: 'Download link will be available for 24 hours'
     });
-    
+
   } catch (error) {
     console.error('❌ Error exporting results:', error);
     res.status(500).json({
@@ -446,12 +475,23 @@ router.post('/:videoId/export', async (req, res) => {
 /**
  * DELETE /api/results/:videoId
  * Delete analysis results (retain video)
+ * 🔒 PRIVACY: Only owner can delete
  */
 router.delete('/:videoId', async (req, res) => {
   try {
     const { videoId } = req.params;
     const { confirmDelete = false } = req.body;
-    
+    // PRIVACY: Check user ownership
+    const ownership = await checkOwnership(videoId, req);
+    if (!ownership.allowed) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied',
+        message: ownership.reason || 'You do not have permission to delete results',
+        videoId
+      });
+    }
+
     if (!confirmDelete) {
       return res.status(400).json({
         success: false,
@@ -459,21 +499,21 @@ router.delete('/:videoId', async (req, res) => {
         message: 'Set confirmDelete: true to proceed with deletion'
       });
     }
-    
+
     console.log(`🗑️ Deleting analysis results for video: ${videoId}`);
-    
+
     // Delete result files
     const [resultFiles] = await gcsService.storage.bucket(gcsService.bucketName).getFiles({
       prefix: `results/${videoId}/`
     });
-    
+
     // Delete frame files
     const [frameFiles] = await gcsService.storage.bucket(gcsService.bucketName).getFiles({
       prefix: `frames/${videoId}/`
     });
-    
+
     const allFiles = [...resultFiles, ...frameFiles];
-    
+
     if (allFiles.length === 0) {
       return res.status(404).json({
         success: false,
@@ -481,13 +521,13 @@ router.delete('/:videoId', async (req, res) => {
         videoId: videoId
       });
     }
-    
+
     // Delete files
     const deletePromises = allFiles.map(file => file.delete());
     await Promise.all(deletePromises);
-    
+
     console.log(`✅ Deleted ${allFiles.length} analysis files for video: ${videoId}`);
-    
+
     res.json({
       success: true,
       videoId: videoId,
@@ -495,7 +535,7 @@ router.delete('/:videoId', async (req, res) => {
       message: 'Analysis results deleted successfully (video retained)',
       note: 'Original video file preserved for re-analysis if needed'
     });
-    
+
   } catch (error) {
     console.error('❌ Error deleting results:', error);
     res.status(500).json({
