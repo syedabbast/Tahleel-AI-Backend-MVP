@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const gcsService = require('../services/gcsService');
+const { upsertVideoUpload } = require('../services/supabaseService');
 
 const router = express.Router();
 
@@ -123,6 +124,31 @@ router.post('/verify', async (req, res) => {
       matchMetadata: matchMetadata || {},
       status: 'ready_for_analysis'
     };
+
+    // === Supabase Upsert: Save upload metadata ===
+    try {
+      const userId = matchMetadata?.userId || null;
+      const userEmail = matchMetadata?.userEmail || null;
+      await upsertVideoUpload({
+        id: videoId,
+        organization_id: matchMetadata?.organization_id || null,
+        uploaded_by: userId || userEmail,
+        file_name: fileName,
+        file_type: metadata.contentType,
+        file_size_bytes: fileSizeBytes,
+        storage_url: `gs://${gcsService.bucketName}/${fileName}`,
+        media_duration_seconds: null, // Optionally extract duration from metadata
+        opponent_team: matchMetadata?.awayTeam || null,
+        match_date: matchMetadata?.matchDate || null,
+        processing_status: 'ready_for_analysis',
+        metadata: {
+          ...matchMetadata
+        }
+      });
+      console.log(`✅ Supabase upload record created for video: ${videoId}`);
+    } catch (supabaseErr) {
+      console.error('❌ Failed to upsert video upload to Supabase:', supabaseErr);
+    }
     
     res.json({
       success: true,
@@ -181,6 +207,32 @@ router.post('/direct', upload.single('video'), async (req, res) => {
     });
     
     const fileSizeMB = Math.round(req.file.size / (1024 * 1024));
+
+    // === Supabase Upsert: Save upload metadata ===
+    try {
+      const md = typeof matchMetadata === 'string' ? JSON.parse(matchMetadata) : matchMetadata;
+      const userId = md?.userId || null;
+      const userEmail = md?.userEmail || null;
+      await upsertVideoUpload({
+        id: videoId,
+        organization_id: md?.organization_id || null,
+        uploaded_by: userId || userEmail,
+        file_name: fileName,
+        file_type: req.file.mimetype,
+        file_size_bytes: req.file.size,
+        storage_url: `gs://${gcsService.bucketName}/${fileName}`,
+        media_duration_seconds: null,
+        opponent_team: md?.awayTeam || null,
+        match_date: md?.matchDate || null,
+        processing_status: 'ready_for_analysis',
+        metadata: {
+          ...md
+        }
+      });
+      console.log(`✅ Supabase upload record created for direct video: ${videoId}`);
+    } catch (supabaseErr) {
+      console.error('❌ Failed to upsert video upload to Supabase:', supabaseErr);
+    }
     
     console.log(`✅ Direct upload completed: ${fileName} (${fileSizeMB} MB)`);
     
