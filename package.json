@@ -32,7 +32,8 @@
     "winston": "^3.10.0",
     "@sendgrid/mail": "^8.0.0",
     "bcrypt": "^5.1.0",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "@supabase/supabase-js": "^2.39.7"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
