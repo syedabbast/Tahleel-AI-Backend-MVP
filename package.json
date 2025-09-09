@@ -30,7 +30,7 @@
     "socket.io": "^4.7.4",
     "uuid": "^9.0.1",
     "winston": "^3.10.0",
-    "@sendgrid/mail": "^8.0.0"  // <-- Added for email notification support
+    "@sendgrid/mail": "^8.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
