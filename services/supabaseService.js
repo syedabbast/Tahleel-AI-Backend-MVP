@@ -1,4 +1,4 @@
-// Supabase backend integration Test for TAHLEEL.ai (Node.js)
+// Supabase backend integration for TAHLEEL.ai (Node.js)
 // Synchronous upsert for users, video_uploads, analyses
 
 const { createClient } = require('@supabase/supabase-js');
