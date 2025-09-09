@@ -220,15 +220,15 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // === AUTH ROUTE (multi-user authentication) ===
 app.use('/api/auth', authRouter);
 
-// === Optionally, require auth for critical routes ===
-// app.use('/api/upload', authMiddleware, uploadRoutes);
-// app.use('/api/analysis', authMiddleware, analysisRoutes);
-// app.use('/api/results', authMiddleware, resultsRoutes);
+// === REQUIRE AUTH FOR CRITICAL ROUTES (PRODUCTION) ===
+app.use('/api/upload', authMiddleware, uploadRoutes);
+app.use('/api/analysis', authMiddleware, analysisRoutes);
+app.use('/api/results', authMiddleware, resultsRoutes);
 
-// Main service routes
-app.use('/api/upload', uploadRoutes);
-app.use('/api/analysis', analysisRoutes);
-app.use('/api/results', resultsRoutes);
+// Main service routes (unprotected - REMOVE for production)
+// app.use('/api/upload', uploadRoutes);
+// app.use('/api/analysis', analysisRoutes);
+// app.use('/api/results', resultsRoutes);
 
 // Enhanced health check with service status
 app.get('/health', (req, res) => {
