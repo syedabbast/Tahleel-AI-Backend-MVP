@@ -9,6 +9,9 @@ const uploadRoutes = require('./routes/upload');
 const analysisRoutes = require('./routes/analysis');
 const resultsRoutes = require('./routes/results');
 
+// === AUTH ROUTE IMPORT (multi-user authentication) ===
+const { router: authRouter, authMiddleware } = require('./routes/auth');
+
 // Middleware imports
 const { errorHandler } = require('./middleware/errorHandler');
 
@@ -200,7 +203,15 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Routes
+// === AUTH ROUTE (multi-user authentication) ===
+app.use('/api/auth', authRouter);
+
+// === Optionally, require auth for critical routes ===
+// app.use('/api/upload', authMiddleware, uploadRoutes);
+// app.use('/api/analysis', authMiddleware, analysisRoutes);
+// app.use('/api/results', authMiddleware, resultsRoutes);
+
+// Main service routes
 app.use('/api/upload', uploadRoutes);
 app.use('/api/analysis', analysisRoutes);
 app.use('/api/results', resultsRoutes);
@@ -300,7 +311,8 @@ app.get('/', (req, res) => {
       results: '/api/results',
       health: '/health',
       status: '/api/status',
-      checkServices: 'POST /api/check-services'
+      checkServices: 'POST /api/check-services',
+      auth: '/api/auth'
     },
     services: {
       gpt4: serviceStatus.gpt4.connected ? '✅ Connected' : '❌ Disconnected',
@@ -342,7 +354,7 @@ app.use('*', (req, res) => {
   res.status(404).json({
     error: 'Route not found',
     message: `${req.method} ${req.originalUrl} not found`,
-    availableRoutes: ['/api/upload', '/api/analysis', '/api/results', '/health', '/api/status']
+    availableRoutes: ['/api/upload', '/api/analysis', '/api/results', '/health', '/api/status', '/api/auth']
   });
 });
 
