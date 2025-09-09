@@ -101,9 +101,21 @@ async function upsertAnalysis({ id, organization_id, created_by, opponent_team, 
   }
 }
 
+// Health check: basic select from users table
+async function checkSupabaseConnection() {
+  try {
+    const { data, error } = await supabase.from('users').select('id').limit(1);
+    if (error) throw error;
+    return { connected: true, error: null };
+  } catch (err) {
+    return { connected: false, error: err.message };
+  }
+}
+
 module.exports = {
   upsertUser,
   upsertVideoUpload,
   upsertAnalysis,
+  checkSupabaseConnection, // <-- REQUIRED EXPORT FOR HEALTH CHECK
   supabase
 };
