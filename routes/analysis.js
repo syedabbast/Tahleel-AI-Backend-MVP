@@ -1,6 +1,7 @@
 const express = require('express');
 const analysisController = require('../controllers/analysisController');
 const gcsService = require('../services/gcsService');
+const { sendQuotaExceededNotification } = require('../services/emailService'); // <-- NEW: Import email service
 
 const router = express.Router();
 
@@ -25,6 +26,8 @@ router.post('/start', async (req, res) => {
     // Get userId/userEmail from matchMetadata (passed from frontend)
     const userId = matchMetadata?.userId;
     const userEmail = matchMetadata?.userEmail;
+    const coachName = matchMetadata?.homeTeam || matchMetadata?.coach_name || "Coach";
+
     if (!userId && !userEmail) {
       return res.status(401).json({
         success: false,
@@ -59,11 +62,36 @@ router.post('/start', async (req, res) => {
     }
 
     if (quotaUsed >= MONTHLY_QUOTA) {
+      // --- BEGIN QUOTA EXCEEDED LOGIC ---
+      try {
+        await sendQuotaExceededNotification({
+          to: userEmail,
+          coach_name: coachName,
+          quota_used: quotaUsed,
+          quota_limit: MONTHLY_QUOTA
+        });
+        console.log(`📧 Quota exceeded email sent to ${userEmail} (${coachName})`);
+      } catch (emailErr) {
+        console.error('❌ Failed to send quota exceeded email:', emailErr);
+      }
+
+      // Optionally: emit Socket.io event for real-time notification
+      const io = req.app.get('io');
+      if (io && userId) {
+        io.to(`user-${userId}`).emit('quota-exceeded', {
+          userId,
+          quotaUsed,
+          quotaLimit: MONTHLY_QUOTA,
+          message: 'Monthly quota exceeded. Please contact support to upgrade your plan.'
+        });
+      }
+
       return res.status(403).json({
         success: false,
         error: 'Monthly quota exceeded',
         quota: { used: quotaUsed, allowed: MONTHLY_QUOTA }
       });
+      // --- END QUOTA EXCEEDED LOGIC ---
     }
     // === END QUOTA ENFORCEMENT ===
 
