@@ -22,6 +22,9 @@ const Anthropic = require('@anthropic-ai/sdk');
 // 🔧 ONLY USE gcsService - Remove duplicate Google Cloud Storage setup
 const gcsService = require('./services/gcsService');
 
+// ➕ Supabase Service Status Check
+const { checkSupabaseConnection } = require('./services/supabaseService');
+
 const app = express();
 const server = createServer(app);
 
@@ -45,11 +48,12 @@ const claude = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY
 });
 
-// Service connection status
+// ➕ Add Supabase to service status
 let serviceStatus = {
   gpt4: { connected: false, lastCheck: null, error: null },
   claude: { connected: false, lastCheck: null, error: null },
-  googleCloud: { connected: false, lastCheck: null, error: null }
+  googleCloud: { connected: false, lastCheck: null, error: null },
+  supabase: { connected: false, lastCheck: null, error: null }
 };
 
 /**
@@ -58,13 +62,11 @@ let serviceStatus = {
 async function checkGPT4Connection() {
   try {
     console.log('🤖 Testing GPT-4 connection...');
-    
     const response = await openai.chat.completions.create({
       model: "gpt-4",
       messages: [{ role: "user", content: "Test connection" }],
       max_tokens: 5
     });
-    
     serviceStatus.gpt4 = {
       connected: true,
       lastCheck: new Date().toISOString(),
@@ -72,10 +74,8 @@ async function checkGPT4Connection() {
       model: "gpt-4",
       status: "operational"
     };
-    
     console.log('✅ GPT-4 connection successful');
     return true;
-    
   } catch (error) {
     serviceStatus.gpt4 = {
       connected: false,
@@ -83,7 +83,6 @@ async function checkGPT4Connection() {
       error: error.message,
       status: "failed"
     };
-    
     console.error('❌ GPT-4 connection failed:', error.message);
     return false;
   }
@@ -95,13 +94,11 @@ async function checkGPT4Connection() {
 async function checkClaudeConnection() {
   try {
     console.log('🧠 Testing Claude connection...');
-    
     const response = await claude.messages.create({
       model: "claude-3-haiku-20240307",
       max_tokens: 5,
       messages: [{ role: "user", content: "Test connection" }]
     });
-    
     serviceStatus.claude = {
       connected: true,
       lastCheck: new Date().toISOString(),
@@ -109,10 +106,8 @@ async function checkClaudeConnection() {
       model: "claude-3-haiku-20240307",
       status: "operational"
     };
-    
     console.log('✅ Claude connection successful');
     return true;
-    
   } catch (error) {
     serviceStatus.claude = {
       connected: false,
@@ -120,7 +115,6 @@ async function checkClaudeConnection() {
       error: error.message,
       status: "failed"
     };
-    
     console.error('❌ Claude connection failed:', error.message);
     return false;
   }
@@ -132,10 +126,7 @@ async function checkClaudeConnection() {
 async function checkGoogleCloudConnection() {
   try {
     console.log('☁️ Testing Google Cloud Storage connection...');
-    
-    // Use the working gcsService instead of duplicate implementation
     const connected = await gcsService.testConnection();
-    
     if (connected) {
       serviceStatus.googleCloud = {
         connected: true,
@@ -144,13 +135,11 @@ async function checkGoogleCloudConnection() {
         bucket: process.env.GOOGLE_CLOUD_STORAGE_BUCKET,
         status: "operational"
       };
-      
       console.log('✅ Google Cloud Storage connection successful');
       return true;
     } else {
       throw new Error('GCS connection test returned false');
     }
-    
   } catch (error) {
     serviceStatus.googleCloud = {
       connected: false,
@@ -158,39 +147,64 @@ async function checkGoogleCloudConnection() {
       error: error.message,
       status: "failed"
     };
-    
     console.error('❌ Google Cloud Storage connection failed:', error.message);
     return false;
   }
 }
 
 /**
- * Check all service connections
+ * ➕ Check Supabase connection
+ */
+async function checkSupabaseService() {
+  try {
+    console.log('🗄️ Testing Supabase connection...');
+    const status = await checkSupabaseConnection();
+    serviceStatus.supabase = {
+      connected: status.connected,
+      lastCheck: new Date().toISOString(),
+      error: status.error,
+      status: status.connected ? "operational" : "failed"
+    };
+    if (status.connected) {
+      console.log('✅ Supabase connection successful');
+      return true;
+    } else {
+      throw new Error(status.error || 'Supabase connection failed');
+    }
+  } catch (error) {
+    serviceStatus.supabase = {
+      connected: false,
+      lastCheck: new Date().toISOString(),
+      error: error.message,
+      status: "failed"
+    };
+    console.error('❌ Supabase connection failed:', error.message);
+    return false;
+  }
+}
+
+/**
+ * ➕ Check all service connections (with Supabase)
  */
 async function checkAllServices() {
   console.log('🔍 Checking all service connections...');
-  
   const checks = await Promise.allSettled([
     checkGPT4Connection(),
     checkClaudeConnection(),
-    checkGoogleCloudConnection()
+    checkGoogleCloudConnection(),
+    checkSupabaseService()
   ]);
-  
-  const allConnected = checks.every(check => 
-    check.status === 'fulfilled' && check.value === true
-  );
-  
+  const allConnected = checks.every(check => check.status === 'fulfilled' && check.value === true);
   console.log(`📊 Service Status Summary:`);
   console.log(`   GPT-4: ${serviceStatus.gpt4.connected ? '✅ Connected' : '❌ Failed'}`);
   console.log(`   Claude: ${serviceStatus.claude.connected ? '✅ Connected' : '❌ Failed'}`);
   console.log(`   Google Cloud: ${serviceStatus.googleCloud.connected ? '✅ Connected' : '❌ Failed'}`);
-  
+  console.log(`   Supabase: ${serviceStatus.supabase.connected ? '✅ Connected' : '❌ Failed'}`);
   if (allConnected) {
     console.log('🎉 All services operational - Ready for Arab League deployment!');
   } else {
     console.log('⚠️ Some services failed - Check configuration before launch');
   }
-  
   return allConnected;
 }
 
@@ -218,10 +232,10 @@ app.use('/api/results', resultsRoutes);
 
 // Enhanced health check with service status
 app.get('/health', (req, res) => {
-  const overallStatus = serviceStatus.gpt4.connected && 
-                       serviceStatus.claude.connected && 
-                       serviceStatus.googleCloud.connected;
-  
+  const overallStatus = serviceStatus.gpt4.connected &&
+                       serviceStatus.claude.connected &&
+                       serviceStatus.googleCloud.connected &&
+                       serviceStatus.supabase.connected;
   res.json({
     status: overallStatus ? 'OK' : 'DEGRADED',
     service: 'TAHLEEL.ai MVP Backend',
@@ -243,6 +257,11 @@ app.get('/health', (req, res) => {
         status: serviceStatus.googleCloud.connected ? 'connected' : 'disconnected',
         lastCheck: serviceStatus.googleCloud.lastCheck,
         error: serviceStatus.googleCloud.error
+      },
+      supabase: {
+        status: serviceStatus.supabase.connected ? 'connected' : 'disconnected',
+        lastCheck: serviceStatus.supabase.lastCheck,
+        error: serviceStatus.supabase.error
       }
     },
     arabLeagueReady: overallStatus,
@@ -257,12 +276,14 @@ app.get('/api/status', (req, res) => {
     timestamp: new Date().toISOString(),
     services: serviceStatus,
     overall: {
-      operational: serviceStatus.gpt4.connected && 
-                   serviceStatus.claude.connected && 
-                   serviceStatus.googleCloud.connected,
-      arabLeagueReady: serviceStatus.gpt4.connected && 
-                       serviceStatus.claude.connected && 
-                       serviceStatus.googleCloud.connected
+      operational: serviceStatus.gpt4.connected &&
+                   serviceStatus.claude.connected &&
+                   serviceStatus.googleCloud.connected &&
+                   serviceStatus.supabase.connected,
+      arabLeagueReady: serviceStatus.gpt4.connected &&
+                       serviceStatus.claude.connected &&
+                       serviceStatus.googleCloud.connected &&
+                       serviceStatus.supabase.connected
     }
   });
 });
@@ -272,7 +293,6 @@ app.post('/api/check-services', async (req, res) => {
   try {
     console.log('🔄 Manual service check requested...');
     const allConnected = await checkAllServices();
-    
     res.json({
       success: true,
       message: 'Service check completed',
@@ -280,7 +300,6 @@ app.post('/api/check-services', async (req, res) => {
       services: serviceStatus,
       timestamp: new Date().toISOString()
     });
-    
   } catch (error) {
     console.error('❌ Service check failed:', error);
     res.status(500).json({
@@ -293,10 +312,10 @@ app.post('/api/check-services', async (req, res) => {
 
 // Root endpoint
 app.get('/', (req, res) => {
-  const operational = serviceStatus.gpt4.connected && 
-                     serviceStatus.claude.connected && 
-                     serviceStatus.googleCloud.connected;
-  
+  const operational = serviceStatus.gpt4.connected &&
+                     serviceStatus.claude.connected &&
+                     serviceStatus.googleCloud.connected &&
+                     serviceStatus.supabase.connected;
   res.json({
     message: 'TAHLEEL.ai MVP Backend - AI Football Tactical Analysis',
     company: 'Auwire Technologies',
@@ -317,7 +336,8 @@ app.get('/', (req, res) => {
     services: {
       gpt4: serviceStatus.gpt4.connected ? '✅ Connected' : '❌ Disconnected',
       claude: serviceStatus.claude.connected ? '✅ Connected' : '❌ Disconnected',
-      googleCloud: serviceStatus.googleCloud.connected ? '✅ Connected' : '❌ Disconnected'
+      googleCloud: serviceStatus.googleCloud.connected ? '✅ Connected' : '❌ Disconnected',
+      supabase: serviceStatus.supabase.connected ? '✅ Connected' : '❌ Disconnected'
     }
   });
 });
@@ -325,19 +345,15 @@ app.get('/', (req, res) => {
 // Socket.io connection handling
 io.on('connection', (socket) => {
   console.log(`🔌 Client connected: ${socket.id}`);
-  
   // Send current service status to client
   socket.emit('service-status', serviceStatus);
-  
   socket.on('disconnect', () => {
     console.log(`🔌 Client disconnected: ${socket.id}`);
   });
-  
   socket.on('join-analysis', (analysisId) => {
     socket.join(`analysis-${analysisId}`);
     console.log(`📊 Client joined analysis room: ${analysisId}`);
   });
-  
   // Handle service check requests
   socket.on('check-services', async () => {
     console.log(`🔍 Client requested service check: ${socket.id}`);
@@ -363,19 +379,15 @@ const PORT = process.env.PORT || 5000;
 // Startup service checks
 async function startServer() {
   console.log('🚀 Starting TAHLEEL.ai Backend...');
-  
   // Check all services on startup
   await checkAllServices();
-  
   // Set up periodic service checks (every 5 minutes)
   setInterval(async () => {
     console.log('🔄 Periodic service check...');
     await checkAllServices();
-    
     // Broadcast service status to all connected clients
     io.emit('service-status', serviceStatus);
   }, 5 * 60 * 1000); // 5 minutes
-  
   server.listen(PORT, () => {
     console.log(`🚀 TAHLEEL.ai MVP Backend running on port ${PORT}`);
     console.log(`🎯 Target: Arab League Teams ($15K-$45K subscriptions)`);
@@ -383,11 +395,10 @@ async function startServer() {
     console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
     console.log(`📊 Health check: http://localhost:${PORT}/health`);
     console.log(`📡 Service status: http://localhost:${PORT}/api/status`);
-    
-    const operational = serviceStatus.gpt4.connected && 
-                       serviceStatus.claude.connected && 
-                       serviceStatus.googleCloud.connected;
-    
+    const operational = serviceStatus.gpt4.connected &&
+                       serviceStatus.claude.connected &&
+                       serviceStatus.googleCloud.connected &&
+                       serviceStatus.supabase.connected;
     if (operational) {
       console.log('🎉 All services operational - READY FOR ARAB LEAGUE LAUNCH! 🏆');
     } else {
