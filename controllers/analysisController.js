@@ -2,6 +2,7 @@ const gcsService = require('../services/gcsService');
 const frameService = require('../services/frameService');
 const gpt4Service = require('../services/gpt4Service');
 const claudeService = require('../services/claudeService');
+const { upsertAnalysis } = require('../services/supabaseService');
 
 class AnalysisController {
   /**
@@ -129,6 +130,33 @@ class AnalysisController {
 
       // Store analysis result in GCS
       await gcsService.uploadAnalysisResult(completeAnalysis, videoId);
+
+      // === NEW: Upsert analysis result to Supabase for business reporting ===
+      try {
+        await upsertAnalysis({
+          id: videoId,
+          organization_id: matchMetadata?.organization_id || null,
+          created_by: matchMetadata?.userId || matchMetadata?.userEmail,
+          opponent_team: matchMetadata?.awayTeam || null,
+          analysis_type: matchMetadata?.analysisType || 'tactical',
+          analysis_data: completeAnalysis, // Store full analysis object for reporting
+          weaknesses: enhancement?.enhanced_analysis?.executive_summary?.key_weaknesses || [],
+          strategies: enhancement?.enhanced_analysis?.actionable_recommendations?.formation_adjustments || [],
+          formation_recommendation: enhancement?.enhanced_analysis?.executive_summary?.formation_recommendations || [],
+          key_players: enhancement?.enhanced_analysis?.tactical_intelligence?.key_players || [],
+          recent_news: null,
+          confidence_score: enhancement?.enhanced_analysis?.confidence_score || 85,
+          ai_enhanced: true,
+          data_source: 'gpt4+claude',
+          processing_time_seconds: processingStats.total_time,
+          is_favorite: false,
+          shared_with_squad: false
+        });
+        console.log(`✅ Supabase analysis upserted for video: ${videoId}`);
+      } catch (supabaseErr) {
+        console.error('❌ Failed to upsert analysis to Supabase:', supabaseErr);
+      }
+      // === END NEW ===
 
       // Cleanup temporary files
       setTimeout(async () => {
