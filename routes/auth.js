@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const { getUserByEmail, createUser, getUserById } = require('../services/userService');
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey'; // Use env var in production
+const JWT_SECRET = process.env.SUPABASE_JWT_SECRET || 'supersecretkey'; // Use env var in production
 const JWT_EXPIRES_IN = '7d'; // 7 days
 
 /**
